@@ -190,7 +190,10 @@ public class StandardTransform : ITransformProvider
                 modified ? json.ToString(Formatting.None) : body);
 
             // Always restore the body stream — even when unmodified, it was already
-            // read to the end and must be rewound so YARP can forward it.
+            // read to the end and must be rewound so YARP can forward it. YARP's
+            // StreamCopyHttpContent reads from HttpContext.Request.Body lazily at
+            // serialize time, so reassigning it here is sufficient — replacing
+            // ProxyRequest.Content itself is explicitly not supported by YARP.
             httpContext.Request.Body = new System.IO.MemoryStream(newBodyBytes);
             httpContext.Request.ContentLength = newBodyBytes.Length;
 
