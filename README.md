@@ -5,7 +5,7 @@ This project is an ASP.NET Core reverse proxy that exposes the same endpoints as
 
 ## History
 
-At the end of May 2026, Microsoft changed their usage policy for Github Copilot. As a fan of Github Copilot and a daily user of Microsoft Visual Studio 2026 I've been hindered by the current inability of Copilot in VS 2026 to be able to use alternative LLM models without having to host them locally. This project addresses that limitation by using the version of Copilot in VS 2026's ability to access locally hosted models using Ollama, and extends the options available to the developer who can now add 100+ hosted LLM models using an instance of LiteLLM Proxy Server (AI Gateway). Ollama-LiteLLM-Proxy acts as Ollama and exposes the same endpoints as Ollama and transparently forwards them to LiteLLM.
+At the end of May 2026, Microsoft changed their usage policy for Github Copilot. As a fan of Github Copilot and a daily user of Microsoft Visual Studio 2026 I've been hindered by the current inability of Copilot in VS 2026 to be able to use alternative LLM models without having to host them locally. This project addresses that limitation by using the version of Copilot in VS 2026's ability to access locally hosted models using Ollama, and extends the options available to the developer who can now add 100+ hosted LLM models to Visual Sutdio 2026 using an instance of LiteLLM Proxy Server (AI Gateway). Ollama-LiteLLM-Proxy acts as Ollama and exposes the same endpoints as Ollama and transparently forwards them to LiteLLM.
 
 Credit to  [OllamaYarpProxy](https://github.com/alkampfergit/OllamaYarpProxy).
 
