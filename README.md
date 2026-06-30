@@ -18,6 +18,11 @@ Credit to  [OllamaYarpProxy](https://github.com/alkampfergit/OllamaYarpProxy).
 - **Response Transformation:** Converts `/models` responses from the LiteLLM/OpenAI schema to the Ollama schema.
 - **Logging:** Logs incoming requests, proxy destinations, and errors for easier debugging.
 
+## Requirements
+
+1. **LiteLLM**
+   Install LiteLLM from [https://www.litellm.ai/] and then configure your favourite models in LiteLLM.
+
 ## How to Run
 
 1. **Build and run the project:**
