@@ -1,3 +1,5 @@
+**NOTE:** This project is actively maintained. I use this solution daily. If there are no updates, it means that it still works sucessfully.
+
 # Ollama-LiteLLM-Proxy
 
 This project is an ASP.NET Core reverse proxy that exposes the same endpoints as Ollama and transparently forwards requests to a [LiteLLM](https://github.com/BerriAI/litellm) backend (default: `http://192.168.0.106:4000`). It uses YARP (Yet Another Reverse Proxy) and custom transforms to rewrite paths, patch request bodies, and adapt response schemas for full Ollama API compatibility.
