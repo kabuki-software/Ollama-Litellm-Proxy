@@ -171,7 +171,7 @@ To write structured logs to a file, add a file sink to `appsettings.json` (e.g. 
 | Service fails to start | Executable not found at registered path | Ensure the output folder path matches where `service.ps1` was run from |
 | Service starts then stops immediately | Configuration error in `appsettings.json` | Check the Application Event Log for startup exceptions |
 | Port 11434 already in use | Local Ollama or another proxy instance running | Change `Kestrel → Endpoints → Http → Url` in `appsettings.json` |
-| HTTP 401/403 from LiteLLM | Wrong or missing API key | Set the `LITELLM_API_KEY` environment variable for the service account, then restart the service |
+| HTTP 401 from LiteLLM | Wrong API key | Update `Bearer` token in `appsettings.json`, then restart the service |
 | `Remove-Service` not found | Windows PowerShell < 6 / older OS | Use `sc.exe delete OllamaLitellmProxy` as an alternative |
 
 ---

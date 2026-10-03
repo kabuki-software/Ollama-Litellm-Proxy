@@ -51,7 +51,7 @@ The script is automatically copied to the build output directory.
 ## Configuration
 
 - **Backend URL:** Change the target in `appsettings.json` under `ReverseProxy → Clusters → ollamaCluster → Destinations`.
-- **Authorization Token:** Set the LiteLLM master key via the `LITELLM_API_KEY` environment variable or the `LiteLLM:ApiKey` config key (kept out of the git-tracked `appsettings.json`).
+- **Authorization Token:** Update the `Bearer` token in the `Transforms` section of the `ollama` route in `appsettings.json`.
 - **Logging:** Controlled via `appsettings.json` or environment variables.
 
 ## Endpoints
