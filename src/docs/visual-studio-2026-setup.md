@@ -117,7 +117,7 @@ If either call fails, check that:
 |---|---|---|
 | VS shows "Cannot connect to Ollama" | Proxy not running | Start the proxy or the Windows service |
 | Empty model list in VS | LiteLLM `/models` returns no models | Check LiteLLM configuration and available providers |
-| HTTP 401 from LiteLLM | Wrong API key | Update `Bearer` token in `appsettings.json` |
+| HTTP 401/403 from LiteLLM | Wrong or missing API key | Set `LITELLM_API_KEY` env var or `LiteLLM:ApiKey` in local config |
 | HTTP 400 on chat completions with DeepSeek | Missing `reasoning_content` | Handled automatically — the proxy injects it on all requests |
 | Port 11434 already in use | Another Ollama instance is running | Stop the local Ollama service or change the proxy port in `appsettings.json` under `Kestrel → Endpoints → Http → Url` |
 

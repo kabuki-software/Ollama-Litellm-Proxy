@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.IO.Compression;
@@ -17,10 +18,14 @@ public class StandardTransform : ITransformProvider
     private const long SyntheticSize = 1966917458L;
 
     private readonly ILogger<StandardTransform> _logger;
+    private readonly string _apiKey;
 
-    public StandardTransform(ILogger<StandardTransform> logger)
+    public StandardTransform(ILogger<StandardTransform> logger, IConfiguration configuration)
     {
         _logger = logger;
+        // Reads LiteLLM:ApiKey from config; overridable by the LITELLM_API_KEY env var.
+        // Kept out of appsettings.json (which is git-tracked) so secrets stay local.
+        _apiKey = configuration["LITELLM_API_KEY"] ?? configuration["LiteLLM:ApiKey"] ?? string.Empty;
     }
 
     public void Apply(TransformBuilderContext context)
@@ -34,6 +39,14 @@ public class StandardTransform : ITransformProvider
 
             try
             {
+                // Apply the LiteLLM bearer token on every proxied request. The placeholder
+                // value that used to live in appsettings.json is removed; the key now comes
+                // from config/env var so it is never committed.
+                if (!string.IsNullOrEmpty(_apiKey))
+                {
+                    transformContext.ProxyRequest.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
+                }
                 if (path == "/api/tags")
                 {
                     transformContext.Path = "/models";
