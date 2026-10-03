@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Http.Extensions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.IO.Compression;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Yarp.ReverseProxy.Transforms;
@@ -70,6 +72,7 @@ public class StandardTransform : ITransformProvider
             var response = transformContext.ProxyResponse;
             var cancellationToken = httpContext.RequestAborted;
 
+            byte[]? originalBytes = null;
             try
             {
                 var localPath = response?.RequestMessage?.RequestUri?.LocalPath;
@@ -77,7 +80,11 @@ public class StandardTransform : ITransformProvider
                     && string.Equals(localPath, "/models", StringComparison.Ordinal)
                     && response.IsSuccessStatusCode)
                 {
-                    var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                    // YARP disables handler auto-decompression, so the content stream is the
+                    // original encoded payload and the copied Content-Encoding still says gzip.
+                    // Parse a decoded copy, but keep the encoded bytes for a failed rewrite.
+                    string content;
+                    (originalBytes, content) = await ReadResponseBodyAsync(response, cancellationToken);
                     SourceRoot? source;
                     try
                     {
@@ -86,12 +93,14 @@ public class StandardTransform : ITransformProvider
                     catch (JsonException jex)
                     {
                         _logger.LogWarning(jex, "Proxy: failed to parse /models response. Raw content: {Content}", content);
+                        await WriteOriginalResponseAsync(transformContext, originalBytes, cancellationToken);
                         return;
                     }
 
                     if (source?.data is null)
                     {
                         _logger.LogWarning("Proxy: /models response did not contain a 'data' array. Raw content: {Content}", content);
+                        await WriteOriginalResponseAsync(transformContext, originalBytes, cancellationToken);
                         return;
                     }
 
@@ -115,6 +124,8 @@ public class StandardTransform : ITransformProvider
                     transformContext.SuppressResponseBody = true;
 
                     var modifiedBytes = Encoding.UTF8.GetBytes(ollamaJson);
+                    // The copied upstream length/encoding describe the original payload, not this JSON.
+                    httpContext.Response.Headers.Remove("Content-Encoding");
                     httpContext.Response.ContentLength = modifiedBytes.Length;
                     httpContext.Response.ContentType = "application/json";
 
@@ -130,6 +141,8 @@ public class StandardTransform : ITransformProvider
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Proxy: Error in response transform for {Url}", httpContext.Request.GetDisplayUrl());
+                if (originalBytes is not null)
+                    await WriteOriginalResponseAsync(transformContext, originalBytes, cancellationToken);
             }
         });
     }
@@ -152,25 +165,38 @@ public class StandardTransform : ITransformProvider
     private async Task InjectReasoningContentAsync(RequestTransformContext transformContext, CancellationToken cancellationToken)
     {
         var httpContext = transformContext.HttpContext;
+        byte[]? originalBytes = null;
         try
         {
-            string body;
-            using (var reader = new System.IO.StreamReader(
-                httpContext.Request.Body,
-                System.Text.Encoding.UTF8,
-                detectEncodingFromByteOrderMarks: false,
-                leaveOpen: true))
+            // Buffer first. Any early return or parse failure happens after the request
+            // stream is already consumed, and YARP still has the original Content-Length
+            // on ProxyRequest.Content. Leaving that combination in place drops the body.
+            using (var buffer = new System.IO.MemoryStream())
             {
-                body = await reader.ReadToEndAsync(cancellationToken);
+                await httpContext.Request.Body.CopyToAsync(buffer, cancellationToken);
+                originalBytes = buffer.ToArray();
             }
 
-            if (string.IsNullOrWhiteSpace(body))
+            if (originalBytes.Length == 0)
+            {
+                ReplaceRequestBody(transformContext, originalBytes);
                 return;
+            }
+
+            var body = Encoding.UTF8.GetString(originalBytes);
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                ReplaceRequestBody(transformContext, originalBytes);
+                return;
+            }
 
             var json = JObject.Parse(body);
             var messages = json["messages"] as JArray;
             if (messages is null)
+            {
+                ReplaceRequestBody(transformContext, originalBytes);
                 return;
+            }
 
             bool modified = false;
             foreach (var message in messages)
@@ -186,29 +212,11 @@ public class StandardTransform : ITransformProvider
                 }
             }
 
-            var newBodyBytes = System.Text.Encoding.UTF8.GetBytes(
-                modified ? json.ToString(Formatting.None) : body);
+            var newBodyBytes = modified
+                ? Encoding.UTF8.GetBytes(json.ToString(Formatting.None))
+                : originalBytes;
 
-            // Always restore the body stream — even when unmodified, it was already
-            // read to the end and must be rewound so YARP can forward it. YARP's
-            // StreamCopyHttpContent reads from HttpContext.Request.Body lazily at
-            // serialize time, so reassigning it here is sufficient — replacing
-            // ProxyRequest.Content itself is explicitly not supported by YARP.
-            httpContext.Request.Body = new System.IO.MemoryStream(newBodyBytes);
-            httpContext.Request.ContentLength = newBodyBytes.Length;
-
-            // YARP builds the outbound HttpRequestMessage (and its StreamCopyHttpContent)
-            // BEFORE request transforms run, copying the original Content-Length onto
-            // ProxyRequest.Content.Headers. That header — not HttpRequest.ContentLength —
-            // is what gets written to the wire. If we don't sync it with the new payload
-            // length, YARP will throw: "Sent N request content bytes, but Content-Length
-            // promised M." Note this matters even when `modified` is false, because
-            // JObject.ToString(Formatting.None) compacts whitespace and changes the size.
-            var proxyContent = transformContext.ProxyRequest.Content;
-            if (proxyContent is not null)
-            {
-                proxyContent.Headers.ContentLength = newBodyBytes.Length;
-            }
+            ReplaceRequestBody(transformContext, newBodyBytes);
 
             if (modified)
                 _logger.LogDebug("Proxy: Injected reasoning_content into assistant messages for DeepSeek compatibility");
@@ -216,7 +224,97 @@ public class StandardTransform : ITransformProvider
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Proxy: Failed to inject reasoning_content; request will be forwarded unmodified");
+            if (originalBytes is not null)
+            {
+                ReplaceRequestBody(transformContext, originalBytes);
+            }
+            else
+            {
+                // The stream was consumed before we could buffer it. Drop the stale length
+                // so YARP does not promise bytes it can no longer read.
+                httpContext.Request.Body = Stream.Null;
+                httpContext.Request.ContentLength = 0;
+                if (transformContext.ProxyRequest.Content is not null)
+                    transformContext.ProxyRequest.Content.Headers.ContentLength = 0;
+            }
         }
+    }
+
+    /// <summary>
+    /// Puts a fully-buffered body back on the request. YARP's StreamCopyHttpContent
+    /// reads HttpContext.Request.Body lazily, but the outbound Content-Length was
+    /// copied onto ProxyRequest.Content before transforms ran. Both must match.
+    /// </summary>
+    private static void ReplaceRequestBody(RequestTransformContext transformContext, byte[] body)
+    {
+        var httpContext = transformContext.HttpContext;
+        httpContext.Request.Body = new System.IO.MemoryStream(body);
+        httpContext.Request.ContentLength = body.Length;
+
+        var proxyContent = transformContext.ProxyRequest.Content;
+        if (proxyContent is not null)
+            proxyContent.Headers.ContentLength = body.Length;
+    }
+
+    /// <summary>
+    /// Returns the original encoded bytes plus the text to parse. YARP's handler has
+    /// automatic decompression disabled, so ReadAsStringAsync would return gzip bytes
+    /// as a string and a failed rewrite would then write the decompressed JSON under
+    /// the original Content-Encoding and Content-Length.
+    /// </summary>
+    private static async Task<(byte[] Raw, string Text)> ReadResponseBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var content = response.Content;
+        await content.LoadIntoBufferAsync(cancellationToken);
+
+        var raw = ReadBufferedContent(content);
+        var encoding = content.Headers.ContentEncoding.ToString() ?? string.Empty;
+        var text = Decode(raw, encoding);
+        return (raw, text);
+    }
+
+    private static string Decode(byte[] raw, string encoding)
+    {
+        Stream stream = new MemoryStream(raw);
+        if (encoding.Contains("gzip", StringComparison.OrdinalIgnoreCase))
+            stream = new GZipStream(stream, CompressionMode.Decompress);
+        else if (encoding.Contains("br", StringComparison.OrdinalIgnoreCase))
+            stream = new BrotliStream(stream, CompressionMode.Decompress);
+        else if (encoding.Contains("deflate", StringComparison.OrdinalIgnoreCase))
+            stream = new DeflateStream(stream, CompressionMode.Decompress);
+
+        using (stream)
+        using (var reader = new StreamReader(stream, Encoding.UTF8))
+            return reader.ReadToEnd();
+    }
+
+    private static byte[] ReadBufferedContent(HttpContent content)
+    {
+        var buffered = typeof(HttpContent)
+            .GetField("_bufferedContent", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.GetValue(content) as MemoryStream
+            ?? throw new InvalidOperationException("Response content was not buffered.");
+
+        var previous = buffered.Position;
+        buffered.Position = 0;
+        var raw = buffered.ToArray();
+        buffered.Position = previous;
+        return raw;
+    }
+
+    /// <summary>
+    /// Writes the original upstream bytes after a failed rewrite. Headers (including
+    /// Content-Encoding and the original Content-Length) were already copied, so the
+    /// body must be the original encoded payload. Suppress the YARP copy or the client
+    /// gets this body plus an empty remainder against the stale length.
+    /// </summary>
+    private static async Task WriteOriginalResponseAsync(ResponseTransformContext transformContext, byte[] originalBytes, CancellationToken cancellationToken)
+    {
+        transformContext.SuppressResponseBody = true;
+
+        var httpContext = transformContext.HttpContext;
+        httpContext.Response.ContentLength = originalBytes.Length;
+        await httpContext.Response.Body.WriteAsync(originalBytes, cancellationToken);
     }
 
     // Stable, deterministic digest so clients that cache by digest see a consistent identity per model id.

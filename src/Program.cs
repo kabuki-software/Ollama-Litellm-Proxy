@@ -79,34 +79,20 @@ app.Use(async (context, next) =>
     {
         logger.LogWarning("Proxy error: {error}", proxyFeature.Error);
     }
-    else if (context.Items.TryGetValue("YarpDestination", out var destination))
+
+    // X-Forwarded-Host is the caller's host, not the cluster we forwarded to.
+    // The feature is only present once the request entered the proxy pipeline,
+    // and ProxiedDestination is set only after YARP selected and sent to one.
+    var proxied = context.Features.Get<Yarp.ReverseProxy.Model.IReverseProxyFeature>()?.ProxiedDestination;
+    if (proxied is not null)
     {
-        logger.LogInformation("Request {path} was proxied to {destination}", originalPath, destination);
-    }
-    else
-    {
-        // Try to log the destination from YARP's context
-        var dest = context.Request.Headers["X-Forwarded-Host"].ToString();
-        if (!string.IsNullOrEmpty(dest))
-        {
-            logger.LogInformation("Request {path} was proxied to {destination}", originalPath, dest);
-        }
+        logger.LogInformation(
+            "Request {path} was proxied to {destination}",
+            originalPath,
+            proxied.Model.Config.Address);
     }
 });
 
-// Map the proxy endpoints with a callback to log the destination
-app.MapReverseProxy(proxyPipeline =>
-{
-    proxyPipeline.Use(async (context, next) =>
-    {
-        // YARP will set the destination info in the cluster/destination features
-        var destination = context.Request.Headers["X-Forwarded-Host"].ToString();
-        if (!string.IsNullOrEmpty(destination))
-        {
-            context.Items["YarpDestination"] = destination;
-        }
-        await next();
-    });
-});
+app.MapReverseProxy();
 
 app.Run();
