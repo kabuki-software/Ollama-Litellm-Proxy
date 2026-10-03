@@ -1,3 +1,5 @@
+**NOTE:** This project is actively maintained. I use this solution daily. If there are no updates, it means that it still works sucessfully.
+
 # Ollama-LiteLLM-Proxy
 
 This project is an ASP.NET Core reverse proxy that exposes the same endpoints as Ollama and transparently forwards requests to a [LiteLLM](https://github.com/BerriAI/litellm) backend (default: `http://192.168.0.106:4000`). It uses YARP (Yet Another Reverse Proxy) and custom transforms to rewrite paths, patch request bodies, and adapt response schemas for full Ollama API compatibility.
@@ -5,7 +7,7 @@ This project is an ASP.NET Core reverse proxy that exposes the same endpoints as
 
 ## History
 
-At the end of May 2026, Microsoft changed their usage policy for Github Copilot. As a fan of Github Copilot and a daily user of Microsoft Visual Studio 2026 I've been hindered by the current inability of Copilot in VS 2026 to be able to use alternative LLM models without having to host them locally. This project addresses that limitation by using the version of Copilot in VS 2026's ability to access locally hosted models using Ollama, and extends the options available to the developer who can now add 100+ hosted LLM models to Visual Sutdio 2026 using an instance of LiteLLM Proxy Server (AI Gateway). Ollama-LiteLLM-Proxy acts as Ollama and exposes the same endpoints as Ollama and transparently forwards them to LiteLLM.
+At the end of May 2026, Microsoft changed their usage policy for Github Copilot. As a fan of Github Copilot and a daily user of Microsoft Visual Studio 2026 I've been hindered by the current inability of Copilot in Microsoft Visual Studio 2026 and Microsoft SQL Server Management Studio to be able to use alternative LLM models without having to host them locally. This project addresses that limitation by using the version of Copilot in VS 2026's ability to access locally hosted models using Ollama, and extends the options available to the developer who can now add 100+ hosted LLM models to Visual Sutdio 2026 using an instance of LiteLLM Proxy Server (AI Gateway). Ollama-LiteLLM-Proxy acts as Ollama and exposes the same endpoints as Ollama and transparently forwards them to LiteLLM.
 
 Credit to  [OllamaYarpProxy](https://github.com/alkampfergit/OllamaYarpProxy).
 
@@ -17,6 +19,11 @@ Credit to  [OllamaYarpProxy](https://github.com/alkampfergit/OllamaYarpProxy).
 - **Thinking-Mode Compatibility:** Injects the `reasoning_content` field on all assistant messages before forwarding. This is required by DeepSeek thinking-mode models (omitting it causes HTTP 400), and is safely ignored by all other OpenAI-compatible backends.
 - **Response Transformation:** Converts `/models` responses from the LiteLLM/OpenAI schema to the Ollama schema.
 - **Logging:** Logs incoming requests, proxy destinations, and errors for easier debugging.
+
+## Requirements
+
+1. **LiteLLM**
+   Install LiteLLM from [https://www.litellm.ai/] and then configure your favourite models in LiteLLM.
 
 ## How to Run
 
